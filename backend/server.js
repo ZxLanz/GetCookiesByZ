@@ -1,14 +1,15 @@
 // backend/server.js
 
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
+
+const { connectDB } = require('./config/database');
 
 const app = express();
 
 // =======================
-// CORS Configuration - FIXED WITH DEBUG LOGGING
+// CORS Configuration
 // =======================
 const allowedOrigins = [
   'http://localhost:5173',
@@ -17,32 +18,24 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    console.log('🔍 CORS Check - Origin:', origin);
-    
     // Allow requests with no origin (mobile apps, Postman, curl, etc.)
     if (!origin) {
-      console.log('✅ CORS: No origin (allowed)');
       return callback(null, true);
     }
     
     // Check if origin is in allowedOrigins array
     if (allowedOrigins.includes(origin)) {
-      console.log('✅ CORS: Origin in whitelist:', origin);
       return callback(null, true);
     }
     
     // Check if origin matches Vercel preview URL pattern
     const vercelPreviewPattern = /^https:\/\/get-cookies-by-.*\.vercel\.app$/;
     if (vercelPreviewPattern.test(origin)) {
-      console.log('✅ CORS: Vercel preview URL matched:', origin);
       return callback(null, true);
     }
     
-    // Log and reject other origins
+    // Reject other origins
     console.error('❌ CORS BLOCKED - Origin:', origin);
-    console.error('   Allowed origins:', allowedOrigins);
-    console.error('   Pattern test result:', vercelPreviewPattern.test(origin));
-    
     const error = new Error('Not allowed by CORS');
     error.origin = origin;
     callback(error);
@@ -59,16 +52,20 @@ app.use(cors({
 app.use(express.json());
 
 // =======================
-// MongoDB Connection
+// MongoDB Connection Middleware (Serverless Optimized)
 // =======================
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('✅ MongoDB Connected:', mongoose.connection.host);
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB Connection Error:', err);
-  });
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error);
+    res.status(503).json({ 
+      message: 'Database connection unavailable',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
 
 // =======================
 // Import Routes
@@ -101,10 +98,15 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+  const mongoose = require('mongoose');
   res.json({
     status: 'ok',
     message: 'Server is running',
     timestamp: new Date().toISOString(),
+    mongodb: {
+      connected: mongoose.connection.readyState === 1,
+      state: mongoose.connection.readyState
+    }
   });
 });
 
@@ -118,9 +120,7 @@ app.use((err, req, res, next) => {
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ 
       message: 'CORS policy violation',
-      origin: err.origin || req.headers.origin,
-      allowedOrigins: allowedOrigins,
-      help: 'Check if your origin matches the allowed pattern'
+      origin: err.origin || req.headers.origin
     });
   }
   
@@ -137,12 +137,15 @@ const PORT = process.env.PORT || 5000;
 
 // Only start server if not in Vercel environment
 if (process.env.NODE_ENV !== 'production') {
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, async () => {
     console.log(
       `🚀 Server running on port ${PORT} in ${
         process.env.NODE_ENV || 'development'
       } mode`
     );
+
+    // Connect to MongoDB on startup (local only)
+    await connectDB();
 
     // =======================
     // Auto-Refresh Scheduler (Local Only)
@@ -172,7 +175,8 @@ if (process.env.NODE_ENV !== 'production') {
     console.log('👋 SIGTERM received, shutting down gracefully...');
     server.close(() => {
       console.log('✅ Server closed');
-      mongoose.connection.close(false, () => {
+      const { disconnectDB } = require('./config/database');
+      disconnectDB().then(() => {
         console.log('✅ MongoDB connection closed');
         process.exit(0);
       });
