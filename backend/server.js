@@ -13,7 +13,8 @@ const app = express();
 app.use(cors({
   origin: [
     'http://localhost:5173',
-    'https://get-cookies-by-z.vercel.app' // ✅ Frontend Vercel URL
+    'https://get-cookies-by-z.vercel.app', // ✅ Production URL
+    /https:\/\/get-cookies-by-z.*\.vercel\.app$/, // ✅ All Vercel preview URLs
   ],
   credentials: true
 }));
