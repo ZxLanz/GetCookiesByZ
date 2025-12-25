@@ -8,16 +8,41 @@ require('dotenv').config();
 const app = express();
 
 // =======================
-// Middleware
+// CORS Configuration - FIXED
 // =======================
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://get-cookies-by-z.vercel.app',
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://get-cookies-by-z.vercel.app', // ✅ Production URL
-    /https:\/\/get-cookies-by-z.*\.vercel\.app$/, // ✅ All Vercel preview URLs
-  ],
-  credentials: true
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowedOrigins array
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Check if origin matches Vercel preview URL pattern
+    if (/^https:\/\/get-cookies-by-z.*\.vercel\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+    
+    // Log and reject other origins
+    console.warn(`❌ CORS blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Authorization']
 }));
+
+// =======================
+// Body Parser
+// =======================
 app.use(express.json());
 
 // =======================
@@ -39,7 +64,7 @@ const authRoutes = require('./routes/auth');
 const storeRoutes = require('./routes/stores');
 const cookieRoutes = require('./routes/cookies');
 const settingsRoutes = require('./routes/settings');
-const activityRoutes = require('./routes/activities'); // ✅ ACTIVITY LOGS
+const activityRoutes = require('./routes/activities');
 
 // =======================
 // Register Routes
@@ -48,7 +73,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cookies', cookieRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/activities', activityRoutes); // ✅ ACTIVITY API
+app.use('/api/activities', activityRoutes);
 
 // =======================
 // Health Check
@@ -67,6 +92,26 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     message: 'Server is running',
     timestamp: new Date().toISOString(),
+  });
+});
+
+// =======================
+// Error Handling Middleware
+// =======================
+app.use((err, req, res, next) => {
+  console.error('❌ Server Error:', err);
+  
+  // CORS errors
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ 
+      message: 'CORS policy violation',
+      origin: req.headers.origin 
+    });
+  }
+  
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
 
