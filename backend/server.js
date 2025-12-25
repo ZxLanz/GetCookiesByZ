@@ -8,7 +8,7 @@ require('dotenv').config();
 const app = express();
 
 // =======================
-// CORS Configuration - FIXED
+// CORS Configuration - FIXED WITH DEBUG LOGGING
 // =======================
 const allowedOrigins = [
   'http://localhost:5173',
@@ -17,22 +17,35 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
+    console.log('🔍 CORS Check - Origin:', origin);
+    
     // Allow requests with no origin (mobile apps, Postman, curl, etc.)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('✅ CORS: No origin (allowed)');
+      return callback(null, true);
+    }
     
     // Check if origin is in allowedOrigins array
     if (allowedOrigins.includes(origin)) {
+      console.log('✅ CORS: Origin in whitelist:', origin);
       return callback(null, true);
     }
     
     // Check if origin matches Vercel preview URL pattern
-    if (/^https:\/\/get-cookies-by-z.*\.vercel\.app$/.test(origin)) {
+    const vercelPreviewPattern = /^https:\/\/get-cookies-by-.*\.vercel\.app$/;
+    if (vercelPreviewPattern.test(origin)) {
+      console.log('✅ CORS: Vercel preview URL matched:', origin);
       return callback(null, true);
     }
     
     // Log and reject other origins
-    console.warn(`❌ CORS blocked origin: ${origin}`);
-    callback(new Error('Not allowed by CORS'));
+    console.error('❌ CORS BLOCKED - Origin:', origin);
+    console.error('   Allowed origins:', allowedOrigins);
+    console.error('   Pattern test result:', vercelPreviewPattern.test(origin));
+    
+    const error = new Error('Not allowed by CORS');
+    error.origin = origin;
+    callback(error);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -105,7 +118,9 @@ app.use((err, req, res, next) => {
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ 
       message: 'CORS policy violation',
-      origin: req.headers.origin 
+      origin: err.origin || req.headers.origin,
+      allowedOrigins: allowedOrigins,
+      help: 'Check if your origin matches the allowed pattern'
     });
   }
   
