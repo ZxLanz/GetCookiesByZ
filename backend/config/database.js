@@ -14,7 +14,7 @@ const connectDB = async () => {
   }
 
   try {
-    // Mongoose options optimized for serverless
+    // Mongoose options optimized for serverless (compatible with latest MongoDB driver)
     const options = {
       // Connection pool settings for serverless
       maxPoolSize: 10,
@@ -23,10 +23,6 @@ const connectDB = async () => {
       // Timeout settings
       serverSelectionTimeoutMS: 5000, // 5 seconds
       socketTimeoutMS: 45000, // 45 seconds
-      
-      // Keep alive settings
-      keepAlive: true,
-      keepAliveInitialDelay: 300000, // 5 minutes
       
       // Retry settings
       retryWrites: true,
