@@ -4,7 +4,7 @@
   "description": "Kasir Pintar Cookie Manager Backend",
   "main": "server.js",
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
   "scripts": {
     "start": "node server.js",
@@ -16,16 +16,16 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@sparticuz/chromium": "^131.0.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
-    "chrome-aws-lambda": "^10.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.9.3",
     "node-cron": "^4.2.1",
-    "puppeteer-core": "^10.4.0",
+    "puppeteer-core": "^23.11.1",
     "puppeteer-real-browser": "^1.4.4"
   },
   "devDependencies": {

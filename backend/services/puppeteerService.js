@@ -9,16 +9,17 @@ const logger = console;
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ✅ AUTO-DETECT Chrome executable path
-const getChromePath = () => {
+const getChromePath = async () => {
   const isProduction = process.env.NODE_ENV === 'production';
   
-  // 🔴 VERCEL: Use Chromium from chrome-aws-lambda
+  // 🔴 VERCEL: Use Chromium from @sparticuz/chromium
   if (isProduction || process.env.VERCEL) {
     try {
-      const chromium = require('chrome-aws-lambda');
-      return chromium.executablePath;
+      const chromium = require('@sparticuz/chromium');
+      const path = await chromium.executablePath();
+      return path;
     } catch (error) {
-      logger.warn('⚠️ chrome-aws-lambda not found, using default');
+      logger.warn('⚠️ @sparticuz/chromium not found, using default');
       return undefined;
     }
   }
@@ -80,8 +81,11 @@ class PuppeteerService {
       
       logger.log(`🔧 Chrome Path: ${executablePath || 'Default'}`);
 
+      // ✅ Detect if we're on Vercel/serverless
+      const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
+      
       const { browser: realBrowser, page: realPage } = await connect({
-        headless: false, // ✅ NON-HEADLESS for Cloudflare bypass
+        headless: isVercel ? 'new' : false, // ✅ Headless on Vercel, non-headless locally
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -91,10 +95,11 @@ class PuppeteerService {
           '--window-size=1920,1080',
           '--disable-blink-features=AutomationControlled',
           '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process'
+          '--disable-features=IsolateOrigins,site-per-process',
+          ...(isVercel ? ['--single-process', '--no-zygote'] : []) // ✅ Extra args for serverless
         ],
         turnstile: true,
-        disableXvfb: false, // ✅ Use Xvfb on Linux (virtual display)
+        disableXvfb: true, // ✅ ALWAYS disable Xvfb (safer for Vercel)
         customConfig: {
           viewport: {
             width: 1920,
@@ -108,7 +113,7 @@ class PuppeteerService {
       page = realPage;
 
       logger.log('✅ Real Browser launched successfully');
-      logger.log(`🔍 Browser Mode: Non-Headless (Cloudflare bypass)`);
+      logger.log(`🔍 Browser Mode: ${isVercel ? 'Headless (Vercel)' : 'Non-Headless (Local)'}`);
       logger.log(`🪪 Target domain: ${domain}`);
 
       logger.log('🌐 Navigating to Kasir Pintar login page...');
