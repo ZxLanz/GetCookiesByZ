@@ -1,7 +1,10 @@
 import axios from 'axios';
 
-// ✅ FIXED: Use production URL as fallback instead of localhost
-const API_URL = import.meta.env.VITE_API_URL || 'https://getcookiesbyz-backend.vercel.app/api';
+// ✅ PRODUCTION API URL - HARDCODED (No env dependency)
+const API_URL = 'https://getcookiesbyz-backend.vercel.app/api';
+
+// Debug: Log API URL
+console.log('🔗 API URL:', API_URL);
 
 const api = axios.create({
   baseURL: API_URL,
@@ -51,3 +54,4 @@ api.interceptors.response.use(
 );
 
 export default api;
+export { API_URL };
