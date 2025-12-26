@@ -15,6 +15,11 @@ const getBrowserInstance = async () => {
     const puppeteer = require('puppeteer-core');
     const chromium = require('@sparticuz/chromium');
     
+    // ⚠️ CRITICAL: Set chromium flags for Vercel
+    await chromium.font(
+      'https://raw.githack.com/googlei18n/noto-emoji/master/fonts/NotoColorEmoji.ttf'
+    );
+    
     return {
       puppeteer,
       executablePath: await chromium.executablePath(),
@@ -26,9 +31,13 @@ const getBrowserInstance = async () => {
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
-        '--window-size=1920,1080'
+        '--window-size=1920,1080',
+        '--single-process', // ✅ Critical for Vercel
+        '--no-zygote' // ✅ Critical for Vercel
       ],
-      headless: 'new' // Use new headless mode
+      headless: chromium.headless, // Use chromium's headless setting
+      ignoreHTTPSErrors: true,
+      defaultViewport: chromium.defaultViewport
     };
   } else {
     // LOCAL: Use regular puppeteer with stealth
@@ -59,7 +68,7 @@ class PuppeteerService {
       logger.log('🚀 Initializing browser...');
       
       // Get browser configuration
-      const { puppeteer, executablePath, args, headless } = await getBrowserInstance();
+      const { puppeteer, executablePath, args, headless, defaultViewport } = await getBrowserInstance();
       
       const isProduction = process.env.VERCEL || process.env.NODE_ENV === 'production';
       logger.log(`🔧 Environment: ${isProduction ? 'PRODUCTION (Vercel)' : 'LOCAL'}`);
@@ -71,14 +80,15 @@ class PuppeteerService {
         executablePath,
         args,
         headless,
-        defaultViewport: {
+        defaultViewport: defaultViewport || {
           width: 1920,
           height: 1080
         },
         ignoreHTTPSErrors: true,
         ...(isProduction && {
-          // Extra settings for Vercel
-          timeout: 60000
+          // Extra settings for Vercel serverless
+          timeout: 0,
+          protocolTimeout: 240000
         })
       });
 
