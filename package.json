@@ -1,4 +1,10 @@
 {
+  "name": "get-cookies-by-z",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build"
+  },
   "dependencies": {
     "playwright": "^1.57.0",
     "playwright-extra": "^4.3.6",
