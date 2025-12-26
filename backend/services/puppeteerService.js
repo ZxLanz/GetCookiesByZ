@@ -1,5 +1,5 @@
 // backend/services/puppeteerService.js
-// ✅ Fixed return format to match controller expectations
+// ✅ STEALTH MODE + Vercel Compatible (Auto-detect Chrome)
 
 const { connect } = require('puppeteer-real-browser');
 
@@ -7,6 +7,65 @@ const logger = console;
 
 // Helper: Wait function
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ✅ AUTO-DETECT Chrome executable path
+const getChromePath = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // 🔴 VERCEL: Use Chromium from chrome-aws-lambda
+  if (isProduction || process.env.VERCEL) {
+    try {
+      const chromium = require('chrome-aws-lambda');
+      return chromium.executablePath;
+    } catch (error) {
+      logger.warn('⚠️ chrome-aws-lambda not found, using default');
+      return undefined;
+    }
+  }
+  
+  // 🟢 LOCAL: Use system Chrome or env variable
+  if (process.env.CHROME_PATH) {
+    return process.env.CHROME_PATH;
+  }
+  
+  // Try common Chrome paths
+  const os = require('os');
+  const fs = require('fs');
+  const platform = os.platform();
+  
+  const commonPaths = {
+    win32: [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
+    ],
+    darwin: [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    ],
+    linux: [
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium'
+    ]
+  };
+  
+  const paths = commonPaths[platform] || [];
+  
+  for (const path of paths) {
+    try {
+      if (fs.existsSync(path)) {
+        logger.log(`✅ Found Chrome at: ${path}`);
+        return path;
+      }
+    } catch (e) {
+      // Continue checking
+    }
+  }
+  
+  logger.warn('⚠️ Chrome not found, using default');
+  return undefined;
+};
 
 class PuppeteerService {
   static async loginAndGetCookies(email, password, domain) {
@@ -16,37 +75,41 @@ class PuppeteerService {
     try {
       logger.log('🚀 Starting Real Browser (puppeteer-real-browser)...');
 
+      // ✅ Get executable path (auto-detect or fallback)
+      const executablePath = await getChromePath();
+      
+      logger.log(`🔧 Chrome Path: ${executablePath || 'Default'}`);
+
       const { browser: realBrowser, page: realPage } = await connect({
-        headless: process.env.HEADLESS_MODE === 'false' ? false : true,
+        headless: false, // ✅ NON-HEADLESS for Cloudflare bypass
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-accelerated-2d-canvas',
           '--disable-gpu',
-          '--window-size=800,600',
-          '--window-position=-2400,-2400',
           '--window-size=1920,1080',
           '--disable-blink-features=AutomationControlled',
-          '--disable-web-resources'
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process'
         ],
         turnstile: true,
-        disableXvfb: true,
+        disableXvfb: false, // ✅ Use Xvfb on Linux (virtual display)
         customConfig: {
           viewport: {
             width: 1920,
             height: 1080
           }
         },
-        executablePath: process.env.CHROME_PATH || undefined
+        executablePath: executablePath
       });
 
       browser = realBrowser;
       page = realPage;
 
       logger.log('✅ Real Browser launched successfully');
-      logger.log(`🔍 Browser Mode: ${process.env.HEADLESS_MODE === 'false' ? 'Non-Headless (Visible)' : 'Headless'}`);
-      logger.log(`🏪 Target domain: ${domain}`);
+      logger.log(`🔍 Browser Mode: Non-Headless (Cloudflare bypass)`);
+      logger.log(`🪪 Target domain: ${domain}`);
 
       logger.log('🌐 Navigating to Kasir Pintar login page...');
       
@@ -85,7 +148,7 @@ class PuppeteerService {
         };
       }
 
-      logger.log(`🔍 Current URL: ${page.url()}`);
+      logger.log(`🔗 Current URL: ${page.url()}`);
 
       // Wait for page to fully load
       logger.log('⏳ Waiting for login form to fully load...');
@@ -101,15 +164,6 @@ class PuppeteerService {
         logger.log('✅ Email input found');
       } catch (error) {
         logger.error('❌ Email input not found');
-        
-        // Take screenshot for debugging
-        try {
-          const screenshotPath = `./error-screenshot-${Date.now()}.png`;
-          await page.screenshot({ path: screenshotPath, fullPage: true });
-          logger.log(`📸 Screenshot saved: ${screenshotPath}`);
-        } catch (screenshotError) {
-          logger.warn('⚠️ Could not take screenshot');
-        }
         
         return {
           success: false,
@@ -182,7 +236,7 @@ class PuppeteerService {
         }
       }
       
-      // Wait for Cloudflare Turnstile
+      // Wait for Cloudflare Turnstile (CRITICAL for bypass)
       logger.log('⏳ Waiting for Cloudflare Turnstile...');
       await sleep(5000);
       
@@ -225,7 +279,7 @@ class PuppeteerService {
 
       // Check if login was successful
       const currentUrl = page.url();
-      logger.log(`🔍 Current URL after login: ${currentUrl}`);
+      logger.log(`🔗 Current URL after login: ${currentUrl}`);
 
       if (currentUrl.includes('login')) {
         // Check for error messages
@@ -285,7 +339,7 @@ class PuppeteerService {
 
       logger.log(`📊 Formatted ${formattedCookies.length} cookies for database`);
 
-      // ✅ FIXED: Return proper format expected by controller
+      // ✅ Return proper format expected by controller
       return {
         success: true,
         cookies: formattedCookies
@@ -298,7 +352,7 @@ class PuppeteerService {
         logger.error(error.stack);
       }
       
-      // ✅ FIXED: Return error format
+      // ✅ Return error format
       return {
         success: false,
         error: error.message || 'Unknown error occurred'
@@ -332,11 +386,14 @@ class PuppeteerService {
     try {
       logger.log('🔍 Validating cookies...');
 
+      const executablePath = await getChromePath();
+
       const { browser: realBrowser, page: realPage } = await connect({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
         turnstile: true,
-        disableXvfb: true
+        disableXvfb: false,
+        executablePath: executablePath
       });
 
       browser = realBrowser;
