@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// ✅ FIXED: Use production URL as fallback instead of localhost
+const API_URL = import.meta.env.VITE_API_URL || 'https://getcookiesbyz-backend.vercel.app/api';
 
 const api = axios.create({
   baseURL: API_URL,
