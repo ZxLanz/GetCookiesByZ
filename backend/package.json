@@ -18,15 +18,13 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.3",
-    "puppeteer-core": "^23.7.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "@sparticuz/chromium": "^131.0.0"
+    "puppeteer-core": "^19.11.1",
+    "@sparticuz/chromium": "^116.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
   },
   "engines": {
-    "node": "24.x"
+    "node": "18.x"
   }
 }
