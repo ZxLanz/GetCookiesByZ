@@ -1,71 +1,53 @@
 // backend/services/puppeteerService.js
-// ✅ STEALTH MODE + Vercel Compatible (Auto-detect Chrome)
-
-const { connect } = require('puppeteer-real-browser');
+// ✅ SERVERLESS-READY: Puppeteer + Stealth + @sparticuz/chromium
 
 const logger = console;
 
 // Helper: Wait function
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ✅ AUTO-DETECT Chrome executable path
-const getChromePath = async () => {
-  const isProduction = process.env.NODE_ENV === 'production';
+// ✅ Dynamic import based on environment
+const getBrowserInstance = async () => {
+  const isProduction = process.env.VERCEL || process.env.NODE_ENV === 'production';
   
-  // 🔴 VERCEL: Use Chromium from @sparticuz/chromium
-  if (isProduction || process.env.VERCEL) {
-    try {
-      const chromium = require('@sparticuz/chromium');
-      const path = await chromium.executablePath();
-      return path;
-    } catch (error) {
-      logger.warn('⚠️ @sparticuz/chromium not found, using default');
-      return undefined;
-    }
+  if (isProduction) {
+    // VERCEL: Use puppeteer-core + @sparticuz/chromium
+    const puppeteer = require('puppeteer-core');
+    const chromium = require('@sparticuz/chromium');
+    
+    return {
+      puppeteer,
+      executablePath: await chromium.executablePath(),
+      args: [
+        ...chromium.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080'
+      ],
+      headless: 'new' // Use new headless mode
+    };
+  } else {
+    // LOCAL: Use regular puppeteer with stealth
+    const puppeteer = require('puppeteer-extra');
+    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+    puppeteer.use(StealthPlugin());
+    
+    return {
+      puppeteer,
+      executablePath: undefined, // Use bundled Chromium
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080'
+      ],
+      headless: false // Show browser locally for debugging
+    };
   }
-  
-  // 🟢 LOCAL: Use system Chrome or env variable
-  if (process.env.CHROME_PATH) {
-    return process.env.CHROME_PATH;
-  }
-  
-  // Try common Chrome paths
-  const os = require('os');
-  const fs = require('fs');
-  const platform = os.platform();
-  
-  const commonPaths = {
-    win32: [
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
-    ],
-    darwin: [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-    ],
-    linux: [
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/chromium'
-    ]
-  };
-  
-  const paths = commonPaths[platform] || [];
-  
-  for (const path of paths) {
-    try {
-      if (fs.existsSync(path)) {
-        logger.log(`✅ Found Chrome at: ${path}`);
-        return path;
-      }
-    } catch (e) {
-      // Continue checking
-    }
-  }
-  
-  logger.warn('⚠️ Chrome not found, using default');
-  return undefined;
 };
 
 class PuppeteerService {
@@ -74,51 +56,51 @@ class PuppeteerService {
     let page = null;
 
     try {
-      logger.log('🚀 Starting Real Browser (puppeteer-real-browser)...');
-
-      // ✅ Get executable path (auto-detect or fallback)
-      const executablePath = await getChromePath();
+      logger.log('🚀 Initializing browser...');
       
-      logger.log(`🔧 Chrome Path: ${executablePath || 'Default'}`);
-
-      // ✅ Detect if we're on Vercel/serverless
-      const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
+      // Get browser configuration
+      const { puppeteer, executablePath, args, headless } = await getBrowserInstance();
       
-      const { browser: realBrowser, page: realPage } = await connect({
-        headless: isVercel ? 'new' : false, // ✅ Headless on Vercel, non-headless locally
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1920,1080',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-          ...(isVercel ? ['--single-process', '--no-zygote'] : []) // ✅ Extra args for serverless
-        ],
-        turnstile: true,
-        disableXvfb: true, // ✅ ALWAYS disable Xvfb (safer for Vercel)
-        customConfig: {
-          viewport: {
-            width: 1920,
-            height: 1080
-          }
+      const isProduction = process.env.VERCEL || process.env.NODE_ENV === 'production';
+      logger.log(`🔧 Environment: ${isProduction ? 'PRODUCTION (Vercel)' : 'LOCAL'}`);
+      logger.log(`🔧 Headless: ${headless}`);
+      logger.log(`🔧 Executable: ${executablePath || 'Bundled Chromium'}`);
+
+      // Launch browser
+      browser = await puppeteer.launch({
+        executablePath,
+        args,
+        headless,
+        defaultViewport: {
+          width: 1920,
+          height: 1080
         },
-        executablePath: executablePath
+        ignoreHTTPSErrors: true,
+        ...(isProduction && {
+          // Extra settings for Vercel
+          timeout: 60000
+        })
       });
 
-      browser = realBrowser;
-      page = realPage;
+      logger.log('✅ Browser launched successfully');
 
-      logger.log('✅ Real Browser launched successfully');
-      logger.log(`🔍 Browser Mode: ${isVercel ? 'Headless (Vercel)' : 'Non-Headless (Local)'}`);
-      logger.log(`🪪 Target domain: ${domain}`);
+      page = await browser.newPage();
 
+      // Set user agent to look more human
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      );
+
+      // Set extra headers
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+      });
+
+      logger.log(`🍪 Target domain: ${domain}`);
       logger.log('🌐 Navigating to Kasir Pintar login page...');
-      
-      // Try to navigate with retries
+
+      // Navigate with retries
       let navigationSuccess = false;
       let retries = 3;
       let lastError = null;
@@ -128,8 +110,8 @@ class PuppeteerService {
           logger.log(`🔄 Attempt ${attempt}/${retries} to load login page...`);
           
           await page.goto('https://kasirpintar.co.id/login', {
-            waitUntil: 'domcontentloaded',
-            timeout: 90000
+            waitUntil: 'networkidle0',
+            timeout: 60000
           });
           
           navigationSuccess = true;
@@ -140,7 +122,7 @@ class PuppeteerService {
           logger.warn(`⚠️ Attempt ${attempt} failed: ${navError.message}`);
           
           if (attempt < retries) {
-            logger.log(`🔄 Retrying in 3 seconds...`);
+            logger.log('🔄 Retrying in 3 seconds...');
             await sleep(3000);
           }
         }
@@ -155,8 +137,7 @@ class PuppeteerService {
 
       logger.log(`🔗 Current URL: ${page.url()}`);
 
-      // Wait for page to fully load
-      logger.log('⏳ Waiting for login form to fully load...');
+      // Wait for page to stabilize
       await sleep(3000);
 
       // Wait for email input
@@ -169,145 +150,129 @@ class PuppeteerService {
         logger.log('✅ Email input found');
       } catch (error) {
         logger.error('❌ Email input not found');
-        
         return {
           success: false,
-          error: 'Login form not found - page might be blocked, down, or structure changed'
+          error: 'Login form not found - page might be blocked or down'
         };
       }
 
-      // Fill email
-      logger.log('✏️ Filling email (human-like)...');
+      // Human-like behavior: Move mouse randomly
+      await page.mouse.move(Math.random() * 500, Math.random() * 500);
+      await sleep(500);
+
+      // Fill email with human-like typing
+      logger.log('✏️ Filling email...');
       await page.click('input[name="email"]');
       await sleep(300);
-      
       await page.type('input[name="email"]', email, { 
-        delay: Math.floor(Math.random() * 50) + 80
+        delay: Math.floor(Math.random() * 50) + 50
       });
       await sleep(500);
 
       // Fill password
-      logger.log('🔐 Filling password (human-like)...');
+      logger.log('🔐 Filling password...');
       await page.click('input[name="password"]');
       await sleep(300);
-      
       await page.type('input[name="password"]', password, { 
-        delay: Math.floor(Math.random() * 50) + 80
+        delay: Math.floor(Math.random() * 50) + 50
       });
       await sleep(800);
 
-      // Verify inputs
-      const emailFilled = await page.evaluate(() => {
-        return document.querySelector('input[name="email"]')?.value || '';
-      });
-      const passwordFilled = await page.evaluate(() => {
-        return document.querySelector('input[name="password"]')?.value || '';
-      });
+      // Verify inputs filled
+      const emailValue = await page.$eval('input[name="email"]', el => el.value);
+      const passwordValue = await page.$eval('input[name="password"]', el => el.value);
       
-      logger.log(`📧 Email filled: ${emailFilled}`);
-      logger.log(`🔒 Password filled: ${passwordFilled ? '***' : 'EMPTY'}`);
+      logger.log(`📧 Email filled: ${emailValue}`);
+      logger.log(`🔑 Password filled: ${passwordValue ? '***' : 'EMPTY'}`);
+
+      if (!emailValue || !passwordValue) {
+        return {
+          success: false,
+          error: 'Failed to fill credentials'
+        };
+      }
+
+      // ⭐ CRITICAL: Wait for Cloudflare Turnstile
+      logger.log('⏳ Waiting for Cloudflare Turnstile widget...');
       
-      // Fallback if typing failed
-      if (emailFilled !== email || !passwordFilled) {
-        logger.warn('⚠️ Typing failed, using fallback method...');
-        
-        await page.evaluate((emailVal, passVal) => {
-          const emailInput = document.querySelector('input[name="email"]');
-          const passwordInput = document.querySelector('input[name="password"]');
-          
-          if (emailInput) {
-            emailInput.value = emailVal;
-            emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-            emailInput.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-          
-          if (passwordInput) {
-            passwordInput.value = passVal;
-            passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-            passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-        }, email, password);
-        
+      // Wait for turnstile widget to appear
+      try {
+        await page.waitForSelector('#myWidget', { timeout: 10000 });
+        logger.log('✅ Turnstile widget found');
+      } catch (e) {
+        logger.warn('⚠️ Turnstile widget not found, continuing anyway...');
+      }
+      
+      // Wait for turnstile to solve (up to 30 seconds)
+      logger.log('⏳ Waiting for Turnstile to solve...');
+      let turnstileSolved = false;
+      let maxWait = 30; // 30 seconds max
+      
+      for (let i = 0; i < maxWait; i++) {
         await sleep(1000);
         
-        const emailCheck = await page.evaluate(() => document.querySelector('input[name="email"]')?.value || '');
-        const passwordCheck = await page.evaluate(() => document.querySelector('input[name="password"]')?.value || '');
+        // Check if button is enabled (means turnstile solved)
+        const isEnabled = await page.$eval(
+          'button[type="submit"]',
+          btn => !btn.disabled
+        ).catch(() => false);
         
-        if (!emailCheck || !passwordCheck) {
-          return {
-            success: false,
-            error: 'Failed to fill email or password'
-          };
+        if (isEnabled) {
+          logger.log(`✅ Turnstile solved after ${i + 1} seconds`);
+          turnstileSolved = true;
+          break;
+        }
+        
+        if (i % 5 === 0 && i > 0) {
+          logger.log(`⏳ Still waiting... ${i}s elapsed`);
         }
       }
       
-      // Wait for Cloudflare Turnstile (CRITICAL for bypass)
-      logger.log('⏳ Waiting for Cloudflare Turnstile...');
-      await sleep(5000);
-      
-      // Check if login button is enabled
-      try {
-        await page.waitForSelector('button[type="submit"]:not([disabled])', {
-          timeout: 10000
-        });
-        logger.log('✅ Login button is enabled');
-      } catch (error) {
-        logger.warn('⚠️ Login button still disabled, will try anyway');
+      if (!turnstileSolved) {
+        logger.warn('⚠️ Turnstile did not solve in 30 seconds');
+        return {
+          success: false,
+          error: 'Cloudflare Turnstile challenge failed - automation detected or timeout'
+        };
       }
       
+      // Extra wait for safety
       await sleep(2000);
 
       // Click login button
       logger.log('🖱️ Clicking login button...');
-      const loginButton = await page.$('button[type="submit"]');
-      if (loginButton) {
-        const hasOnClick = await page.evaluate((btn) => {
-          return btn.hasAttribute('onclick');
-        }, loginButton);
-        
-        if (hasOnClick) {
-          logger.log('🔧 Button has onclick handler, executing it...');
-          await page.evaluate((btn) => {
-            btn.click();
-          }, loginButton);
-        } else {
-          await loginButton.click();
-        }
-      } else {
-        logger.log('⚠️ Login button not found, pressing Enter instead');
-        await page.keyboard.press('Enter');
-      }
-
-      // Wait for login to complete
+      await page.click('button[type="submit"]');
+      
+      // Wait for navigation
       logger.log('⏳ Waiting for login to complete...');
-      await sleep(8000);
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
+        sleep(30000)
+      ]);
 
-      // Check if login was successful
+      // Additional wait for any redirects
+      await sleep(3000);
+
       const currentUrl = page.url();
       logger.log(`🔗 Current URL after login: ${currentUrl}`);
 
+      // Check if still on login page
       if (currentUrl.includes('login')) {
-        // Check for error messages
-        try {
-          const errorElement = await page.$('.error, .alert-danger, [role="alert"], .text-red-500, .text-danger');
-          if (errorElement) {
-            const errorText = await page.evaluate(el => el.textContent, errorElement);
-            return {
-              success: false,
-              error: `Login failed: ${errorText.trim()}`
-            };
-          }
-        } catch (e) {
-          // Ignore
-        }
-        
+        // Try to get error message
+        const errorMsg = await page.$eval(
+          '.error, .alert-danger, [role="alert"], .text-red-500',
+          el => el.textContent
+        ).catch(() => null);
+
         return {
           success: false,
-          error: 'Login failed - still on login page. Please check credentials.'
+          error: errorMsg 
+            ? `Login failed: ${errorMsg.trim()}` 
+            : 'Login failed - still on login page. Check credentials or Cloudflare blocked.'
         };
       }
 
-      logger.log('✅ Login successful - navigated away from login page');
+      logger.log('✅ Login successful!');
 
       // Wait for dashboard to load
       await sleep(3000);
@@ -316,17 +281,14 @@ class PuppeteerService {
       logger.log('🍪 Extracting cookies...');
       const cookies = await page.cookies();
 
-      // Filter relevant cookies
+      // Filter relevant cookies (exclude tracking cookies)
       const relevantCookies = cookies.filter(cookie => {
-        return !cookie.name.startsWith('_ga') && 
-               !cookie.name.startsWith('_gid') &&
-               !cookie.name.startsWith('_fbp') &&
-               !cookie.name.startsWith('_gat') &&
-               !cookie.name.startsWith('_gcl') &&
+        const irrelevantPrefixes = ['_ga', '_gid', '_fbp', '_gat', '_gcl', '__'];
+        return !irrelevantPrefixes.some(prefix => cookie.name.startsWith(prefix)) &&
                cookie.name.length > 0;
       });
 
-      logger.log(`✅ Got ${relevantCookies.length} relevant cookies from ${cookies.length} total cookies`);
+      logger.log(`✅ Got ${relevantCookies.length} relevant cookies from ${cookies.length} total`);
 
       // Format cookies for database
       const formattedCookies = relevantCookies.map(cookie => ({
@@ -342,22 +304,18 @@ class PuppeteerService {
         sameSite: cookie.sameSite || 'Lax'
       }));
 
-      logger.log(`📊 Formatted ${formattedCookies.length} cookies for database`);
+      logger.log(`📊 Formatted ${formattedCookies.length} cookies`);
 
-      // ✅ Return proper format expected by controller
       return {
         success: true,
         cookies: formattedCookies
       };
 
     } catch (error) {
-      logger.error('❌ Puppeteer Real Browser Error:');
+      logger.error('❌ Error in loginAndGetCookies:');
       logger.error(error.message);
-      if (error.stack) {
-        logger.error(error.stack);
-      }
+      logger.error(error.stack);
       
-      // ✅ Return error format
       return {
         success: false,
         error: error.message || 'Unknown error occurred'
@@ -391,18 +349,16 @@ class PuppeteerService {
     try {
       logger.log('🔍 Validating cookies...');
 
-      const executablePath = await getChromePath();
+      const { puppeteer, executablePath, args } = await getBrowserInstance();
 
-      const { browser: realBrowser, page: realPage } = await connect({
+      browser = await puppeteer.launch({
+        executablePath,
+        args,
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        turnstile: true,
-        disableXvfb: false,
-        executablePath: executablePath
+        defaultViewport: { width: 1920, height: 1080 }
       });
 
-      browser = realBrowser;
-      page = realPage;
+      page = await browser.newPage();
 
       // Convert cookies to Puppeteer format
       const puppeteerCookies = cookies.map(c => ({
@@ -419,10 +375,10 @@ class PuppeteerService {
       }));
 
       await page.setCookie(...puppeteerCookies);
-      logger.log(`🍪 Set ${puppeteerCookies.length} cookies to page`);
+      logger.log(`🍪 Set ${puppeteerCookies.length} cookies`);
 
       const response = await page.goto('https://kasirpintar.co.id/dashboard', {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'networkidle0',
         timeout: 30000
       });
 
@@ -440,29 +396,16 @@ class PuppeteerService {
         return true;
       }
 
-      logger.warn(`⚠️ Unexpected response status: ${response?.status()}`);
+      logger.warn(`⚠️ Unexpected status: ${response?.status()}`);
       return false;
 
     } catch (error) {
-      logger.error('❌ Cookie validation error:', error.message);
+      logger.error('❌ Validation error:', error.message);
       return false;
 
     } finally {
-      if (page) {
-        try {
-          await page.close();
-        } catch (err) {
-          logger.warn('⚠️ Error closing page:', err.message);
-        }
-      }
-      
-      if (browser) {
-        try {
-          await browser.close();
-        } catch (err) {
-          logger.warn('⚠️ Error closing browser:', err.message);
-        }
-      }
+      if (page) await page.close().catch(() => {});
+      if (browser) await browser.close().catch(() => {});
     }
   }
 }
