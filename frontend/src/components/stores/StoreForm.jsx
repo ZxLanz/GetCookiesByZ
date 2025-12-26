@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { storeService } from '../../services/storeService';
 
 function StoreForm({ store, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
@@ -44,7 +45,6 @@ function StoreForm({ store, onClose, onSubmit }) {
       ...prev,
       [name]: value
     }));
-    // Clear error saat user mulai mengetik
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
@@ -63,30 +63,19 @@ function StoreForm({ store, onClose, onSubmit }) {
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const url = store 
-        ? `http://localhost:5000/api/stores/${store._id}`
-        : 'http://localhost:5000/api/stores';
-      const method = store ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save store');
+      
+      // ✅ FIXED: Use storeService instead of manual fetch
+      if (store) {
+        await storeService.update(store._id, formData);
+      } else {
+        await storeService.create(formData);
       }
 
       toast.success(`Toko "${formData.name}" berhasil ${store ? 'diperbarui' : 'ditambahkan'}!`);
       onSubmit();
     } catch (error) {
-      toast.error(`Gagal menyimpan toko: ${error.message}`);
+      const errorMsg = error.response?.data?.message || error.message || 'Gagal menyimpan toko';
+      toast.error(`Gagal menyimpan toko: ${errorMsg}`);
     } finally {
       setLoading(false);
     }

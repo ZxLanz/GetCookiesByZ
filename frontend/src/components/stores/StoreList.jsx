@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus, AlertTriangle, X, Edit2, Trash2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import StoreForm from './StoreForm';
+import { storeService } from '../../services/storeService';
 
 const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
   const [loadingGenerate, setLoadingGenerate] = useState({});
@@ -30,23 +31,16 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
     if (!storeToDelete) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/stores/${storeToDelete._id}`, {
-        method: 'DELETE',
-        headers: { 
-          'Authorization': `Bearer ${token}` 
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to delete');
-
+      // ✅ FIXED: Use storeService instead of manual fetch
+      await storeService.delete(storeToDelete._id);
       toast.success(`Toko "${storeToDelete.name}" berhasil dihapus!`);
       setShowDeleteModal(false);
       setStoreToDelete(null);
       onRefresh?.();
     } catch (error) {
       console.error('Delete error:', error);
-      toast.error(`Gagal menghapus toko: ${error.message}`);
+      const errorMsg = error.response?.data?.message || error.message || 'Gagal menghapus toko';
+      toast.error(`Gagal menghapus toko: ${errorMsg}`);
     }
   };
 
@@ -62,43 +56,18 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
     try {
       setLoadingGenerate(prev => ({ ...prev, [storeId]: true }));
 
-      const token = localStorage.getItem('token');
-      
-      // ✅ Check if store has credentials
-      const checkResponse = await fetch(
-        `http://localhost:5000/api/stores/${storeId}/has-credentials`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-
-      if (!checkResponse.ok) {
-        throw new Error('Failed to check credentials');
-      }
-
-      const checkData = await checkResponse.json();
+      // ✅ FIXED: Use storeService instead of manual fetch
+      const checkData = await storeService.hasCredentials(storeId);
       console.log('📋 Credentials check:', checkData);
 
       if (checkData.hasCredentials) {
         // ✅ Auto-generate with existing credentials
         const loadingToast = toast.loading('Auto generating cookies...');
         
-        const response = await fetch(
-          `http://localhost:5000/api/stores/${storeId}/generate`,
-          {
-            method: 'POST',
-            headers: { 
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({}) // Empty body = use saved credentials
-          }
-        );
-
-        const data = await response.json();
+        const data = await storeService.generateCookies(storeId);
         toast.dismiss(loadingToast);
 
-        if (response.ok && data.success) {
+        if (data.success) {
           toast.success(`Berhasil generate ${data.cookiesCount} cookies!`);
           await onRefresh?.();
         } else {
@@ -113,7 +82,8 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
       }
     } catch (error) {
       console.error('Generate error:', error);
-      toast.error(`Error: ${error.message}`);
+      const errorMsg = error.response?.data?.message || error.message || 'Terjadi kesalahan';
+      toast.error(`Error: ${errorMsg}`);
     } finally {
       setLoadingGenerate(prev => ({ ...prev, [storeId]: false }));
     }
@@ -127,25 +97,18 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
     }
 
     try {
-      const token = localStorage.getItem('token');
       const loadingToast = toast.loading('Generating cookies...');
       
-      const response = await fetch(
-        `http://localhost:5000/api/stores/${selectedStore._id}/generate`,
-        {
-          method: 'POST',
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(credentials)
-        }
+      // ✅ FIXED: Use storeService instead of manual fetch
+      const data = await storeService.generateCookies(
+        selectedStore._id,
+        credentials.email,
+        credentials.password
       );
-
-      const data = await response.json();
+      
       toast.dismiss(loadingToast);
 
-      if (response.ok && data.success) {
+      if (data.success) {
         toast.success(`Berhasil generate ${data.cookiesCount} cookies! Credentials telah disimpan.`);
         setShowCredentialModal(false);
         setCredentials({ email: '', password: '' });
@@ -158,7 +121,8 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
       }
     } catch (error) {
       console.error('Generate error:', error);
-      toast.error(`Error: ${error.message}`);
+      const errorMsg = error.response?.data?.message || error.message || 'Terjadi kesalahan';
+      toast.error(`Error: ${errorMsg}`);
     }
   };
 
