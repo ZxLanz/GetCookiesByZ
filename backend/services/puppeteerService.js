@@ -1,5 +1,6 @@
 // backend/services/puppeteerService.js
 // Vercel-optimized version with @sparticuz/chromium
+// Optimized for 1024MB memory limit
 
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
@@ -15,19 +16,32 @@ const isVercel = process.env.VERCEL || process.env.VERCEL_ENV || process.env.NOD
 class PuppeteerService {
   static async getBrowserConfig() {
     if (isVercel) {
-      logger.log('🔧 Configuring for VERCEL environment');
+      logger.log('🔧 Configuring for VERCEL environment (1024MB)');
       
-      // Force chromium args for Vercel
+      // Force chromium args for Vercel with memory optimization
       chromium.setGraphicsMode = false;
       chromium.setHeadlessMode = true;
       
       return {
         executablePath: await chromium.executablePath(),
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
+        args: [
+          ...chromium.args,
+          '--disable-dev-shm-usage',
+          '--disable-software-rasterizer',
+          '--single-process', // CRITICAL for low memory
+          '--no-zygote',
+          '--disable-gpu',
+          '--disable-web-security', // Reduce memory overhead
+          '--disable-features=IsolateOrigins,site-per-process', // Reduce process isolation overhead
+          '--js-flags=--max-old-space-size=460' // Limit Node.js heap to ~460MB (leave room for Chromium)
+        ],
+        defaultViewport: {
+          width: 1280, // Reduced from 1920
+          height: 720  // Reduced from 1080
+        },
         headless: chromium.headless,
         ignoreHTTPSErrors: true,
-        timeout: 60000
+        timeout: 30000 // Reduced from 60s
       };
     } else {
       logger.log('🔧 Configuring for LOCAL environment');
@@ -76,6 +90,18 @@ class PuppeteerService {
 
       page = await browser.newPage();
 
+      // Disable unnecessary features to save memory
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        const resourceType = request.resourceType();
+        // Block images, fonts, stylesheets to save memory
+        if (['image', 'font', 'stylesheet'].includes(resourceType)) {
+          request.abort();
+        } else {
+          request.continue();
+        }
+      });
+
       // Set user agent
       await page.setUserAgent(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36'
@@ -84,14 +110,14 @@ class PuppeteerService {
       // Set extra headers
       await page.setExtraHTTPHeaders({
         'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       });
 
       logger.log(`🌐 Navigating to Kasir Pintar login page...`);
 
-      // Navigate with retries
+      // Navigate with retries (reduced timeout for memory efficiency)
       let navigationSuccess = false;
-      const maxRetries = 3;
+      const maxRetries = 2; // Reduced from 3
       let lastError = null;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -99,8 +125,8 @@ class PuppeteerService {
           logger.log(`🔄 Attempt ${attempt}/${maxRetries}...`);
           
           await page.goto('https://kasirpintar.co.id/login', {
-            waitUntil: 'networkidle0',
-            timeout: 45000
+            waitUntil: 'domcontentloaded', // Changed from 'networkidle0' to save time
+            timeout: 30000 // Reduced from 45s
           });
           
           navigationSuccess = true;
@@ -111,7 +137,7 @@ class PuppeteerService {
           logger.warn(`⚠️ Attempt ${attempt} failed: ${navError.message}`);
           
           if (attempt < maxRetries) {
-            await sleep(3000);
+            await sleep(2000); // Reduced from 3s
           }
         }
       }
@@ -121,13 +147,13 @@ class PuppeteerService {
       }
 
       // Wait for page to stabilize
-      await sleep(2000);
+      await sleep(1500); // Reduced from 2s
 
       // Wait for email input
       logger.log('⏳ Waiting for login form...');
       try {
         await page.waitForSelector('input[name="email"]', {
-          timeout: 30000,
+          timeout: 20000, // Reduced from 30s
           visible: true
         });
         logger.log('✅ Login form found');
@@ -138,20 +164,20 @@ class PuppeteerService {
       // Fill email
       logger.log('✏️ Filling email...');
       await page.click('input[name="email"]');
-      await sleep(300);
+      await sleep(200); // Reduced from 300ms
       await page.type('input[name="email"]', email, { 
-        delay: Math.floor(Math.random() * 50) + 50
+        delay: Math.floor(Math.random() * 30) + 30 // Reduced delay
       });
-      await sleep(500);
+      await sleep(400); // Reduced from 500ms
 
       // Fill password
       logger.log('🔐 Filling password...');
       await page.click('input[name="password"]');
-      await sleep(300);
+      await sleep(200); // Reduced from 300ms
       await page.type('input[name="password"]', password, { 
-        delay: Math.floor(Math.random() * 50) + 50
+        delay: Math.floor(Math.random() * 30) + 30 // Reduced delay
       });
-      await sleep(800);
+      await sleep(600); // Reduced from 800ms
 
       // Verify inputs
       const emailValue = await page.$eval('input[name="email"]', el => el.value);
@@ -168,7 +194,7 @@ class PuppeteerService {
       logger.log('⏳ Waiting for Turnstile challenge...');
       
       let turnstileSolved = false;
-      const maxWaitTime = 45; // 45 seconds
+      const maxWaitTime = 35; // Reduced from 45s to fit within 10s function limit
 
       for (let i = 0; i < maxWaitTime; i++) {
         await sleep(1000);
@@ -195,7 +221,7 @@ class PuppeteerService {
       }
       
       // Extra wait for safety
-      await sleep(2000);
+      await sleep(1500); // Reduced from 2s
 
       // Click login button
       logger.log('🖱️ Clicking login button...');
@@ -204,11 +230,11 @@ class PuppeteerService {
       // Wait for navigation
       logger.log('⏳ Waiting for login to complete...');
       await Promise.race([
-        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
-        sleep(30000)
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }), // Changed from networkidle0
+        sleep(20000) // Reduced from 30s
       ]);
 
-      await sleep(3000);
+      await sleep(2000); // Reduced from 3s
 
       const currentUrl = page.url();
       logger.log(`🔗 Current URL: ${currentUrl}`);
@@ -228,7 +254,7 @@ class PuppeteerService {
       }
 
       logger.log('✅ Login successful!');
-      await sleep(2000);
+      await sleep(1500); // Reduced from 2s
 
       // Extract cookies
       logger.log('🍪 Extracting cookies...');
@@ -300,6 +326,17 @@ class PuppeteerService {
       browser = await puppeteer.launch(launchOptions);
       page = await browser.newPage();
 
+      // Disable unnecessary features
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        const resourceType = request.resourceType();
+        if (['image', 'font', 'stylesheet'].includes(resourceType)) {
+          request.abort();
+        } else {
+          request.continue();
+        }
+      });
+
       // Convert cookies to Puppeteer format
       const puppeteerCookies = cookies.map(c => ({
         name: c.name,
@@ -318,11 +355,11 @@ class PuppeteerService {
       logger.log(`🍪 Set ${puppeteerCookies.length} cookies`);
 
       const response = await page.goto('https://kasirpintar.co.id/dashboard', {
-        waitUntil: 'networkidle0',
-        timeout: 30000
+        waitUntil: 'domcontentloaded', // Changed from networkidle0
+        timeout: 20000 // Reduced from 30s
       });
 
-      await sleep(2000);
+      await sleep(1500); // Reduced from 2s
 
       const currentUrl = page.url();
 
