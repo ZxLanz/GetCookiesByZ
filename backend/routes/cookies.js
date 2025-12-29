@@ -4,35 +4,33 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const {
-  getCookies,
+  generateCookies,
+  getAllCookies,
   getCookiesByStore,
-  createCookie,
-  importCookies,
-  updateCookie,
-  deleteCookie,
-  deleteCookiesByStore,
-  healthCheck  // ✅ NAMA INI MATCH dengan export di controller
+  validateCookies,
+  deleteCookies,
+  autoGenerateCookies
 } = require('../controllers/cookieController');
 
-// ✅ Health check route - MUST be BEFORE /:id routes!
-router.post('/health-check/:storeId', protect, healthCheck);
+// All routes are protected
+router.use(protect);
 
-// Import route
-router.post('/import', protect, importCookies);
+// POST /api/cookies/generate - Generate new cookies
+router.post('/generate', generateCookies);
 
-// Get all cookies & create new cookie
-router.route('/')
-  .get(protect, getCookies)
-  .post(protect, createCookie);
+// POST /api/cookies/auto-generate - Auto-generate for all stores (cron)
+router.post('/auto-generate', autoGenerateCookies);
 
-// Get cookies by store & delete all cookies by store
-router.route('/store/:storeId')
-  .get(protect, getCookiesByStore)
-  .delete(protect, deleteCookiesByStore);
+// GET /api/cookies - Get all cookies
+router.get('/', getAllCookies);
 
-// Single cookie operations (update & delete)
-router.route('/:id')
-  .put(protect, updateCookie)
-  .delete(protect, deleteCookie);
+// GET /api/cookies/store/:storeName - Get cookies by store name
+router.get('/store/:storeName', getCookiesByStore);
+
+// POST /api/cookies/validate/:storeName - Validate cookies
+router.post('/validate/:storeName', validateCookies);
+
+// DELETE /api/cookies/:storeName - Delete cookies
+router.delete('/:storeName', deleteCookies);
 
 module.exports = router;
