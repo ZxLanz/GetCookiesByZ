@@ -3,7 +3,7 @@
 const cron = require('node-cron');
 const Store = require('../models/Store');
 const Cookie = require('../models/Cookie');
-const puppeteerService = require('./puppeteerService');
+const puppeteerService = require('./playwrightService');
 const healthCheckService = require('./healthCheckService');
 const { logActivity } = require('../controllers/activityController'); // ✅ ADD THIS
 

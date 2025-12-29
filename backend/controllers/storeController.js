@@ -2,8 +2,8 @@
 
 const Store = require('../models/Store');
 const Cookie = require('../models/Cookie');
-const puppeteerService = require('../services/puppeteerService');
-const { logActivity } = require('./activityController'); // ✅ ADD ACTIVITY LOG
+const playwrightService = require('../services/playwrightService'); // ✅ FIXED
+const { logActivity } = require('./activityController');
 
 // ==============================
 // Get all stores
@@ -253,7 +253,8 @@ exports.generateCookies = async (req, res) => {
       });
     }
 
-    const result = await puppeteerService.loginAndGetCookies(
+    // ✅ FIXED - Ganti puppeteerService jadi playwrightService
+    const result = await playwrightService.loginAndGetCookies(
       email || store.decryptPassword(store.encryptedEmail),
       password || store.decryptPassword(store.encryptedPassword),
       store.domain
@@ -332,7 +333,8 @@ exports.syncCookies = async (req, res) => {
     const email = store.decryptPassword(store.encryptedEmail);
     const password = store.decryptPassword(store.encryptedPassword);
 
-    const result = await puppeteerService.loginAndGetCookies(
+    // ✅ FIXED - Ganti puppeteerService jadi playwrightService
+    const result = await playwrightService.loginAndGetCookies(
       email,
       password,
       store.domain
