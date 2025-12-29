@@ -131,12 +131,11 @@ app.use((err, req, res, next) => {
 });
 
 // =======================
-// Start Server (Local Only)
+// Local Development Server
 // =======================
-const PORT = process.env.PORT || 5000;
-
-// Only start server if not in Vercel environment
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  
   const server = app.listen(PORT, async () => {
     console.log(
       `🚀 Server running on port ${PORT} in ${
