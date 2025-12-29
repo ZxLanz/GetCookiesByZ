@@ -1,5 +1,5 @@
 // backend/services/puppeteerService.js
-// Vercel-optimized version with stable dependencies
+// Vercel-optimized version with @sparticuz/chromium
 
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
@@ -10,19 +10,29 @@ const logger = console;
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Check if running on Vercel
-const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
+const isVercel = process.env.VERCEL || process.env.VERCEL_ENV || process.env.NODE_ENV === 'production';
 
 class PuppeteerService {
-  static async loginAndGetCookies(email, password, domain) {
-    let browser = null;
-    let page = null;
-
-    try {
-      logger.log('🚀 Initializing browser...');
-      logger.log(`🔧 Environment: ${isVercel ? 'PRODUCTION (Vercel)' : 'LOCAL'}`);
-
-      // Configure browser launch options
-      const launchOptions = {
+  static async getBrowserConfig() {
+    if (isVercel) {
+      logger.log('🔧 Configuring for VERCEL environment');
+      
+      // Force chromium args for Vercel
+      chromium.setGraphicsMode = false;
+      chromium.setHeadlessMode = true;
+      
+      return {
+        executablePath: await chromium.executablePath(),
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        headless: chromium.headless,
+        ignoreHTTPSErrors: true,
+        timeout: 60000
+      };
+    } else {
+      logger.log('🔧 Configuring for LOCAL environment');
+      
+      return {
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -31,12 +41,7 @@ class PuppeteerService {
           '--no-first-run',
           '--no-zygote',
           '--single-process',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--disable-dev-tools',
-          '--disable-extensions',
-          '--hide-scrollbars',
-          '--disable-features=site-per-process'
+          '--disable-gpu'
         ],
         defaultViewport: {
           width: 1920,
@@ -46,13 +51,24 @@ class PuppeteerService {
         ignoreHTTPSErrors: true,
         timeout: 60000
       };
+    }
+  }
 
-      if (isVercel) {
-        // Add Vercel-specific settings
-        launchOptions.executablePath = await chromium.executablePath();
-        launchOptions.args.push(...chromium.args);
-        logger.log('🔧 Using @sparticuz/chromium for Vercel');
-      }
+  static async loginAndGetCookies(email, password, domain) {
+    let browser = null;
+    let page = null;
+
+    try {
+      logger.log('🚀 Initializing browser...');
+      logger.log(`🔧 Environment: ${isVercel ? 'PRODUCTION (Vercel)' : 'LOCAL'}`);
+
+      const launchOptions = await this.getBrowserConfig();
+      
+      logger.log('🔧 Browser config:', JSON.stringify({
+        executablePath: launchOptions.executablePath ? 'SET' : 'NOT SET',
+        argsCount: launchOptions.args?.length || 0,
+        headless: launchOptions.headless
+      }));
 
       logger.log('🔧 Launching browser...');
       browser = await puppeteer.launch(launchOptions);
@@ -247,7 +263,9 @@ class PuppeteerService {
 
     } catch (error) {
       logger.error('❌ Error in loginAndGetCookies:');
-      logger.error(error.message);
+      logger.error('Error name:', error.name);
+      logger.error('Error message:', error.message);
+      logger.error('Error stack:', error.stack);
       
       return {
         success: false,
@@ -278,21 +296,7 @@ class PuppeteerService {
     try {
       logger.log('🔍 Validating cookies...');
 
-      const launchOptions = {
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage'
-        ],
-        headless: 'new',
-        defaultViewport: { width: 1920, height: 1080 }
-      };
-
-      if (isVercel) {
-        launchOptions.executablePath = await chromium.executablePath();
-        launchOptions.args.push(...chromium.args);
-      }
-
+      const launchOptions = await this.getBrowserConfig();
       browser = await puppeteer.launch(launchOptions);
       page = await browser.newPage();
 
