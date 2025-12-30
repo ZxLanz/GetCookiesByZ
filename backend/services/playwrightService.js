@@ -11,169 +11,185 @@ const logger = {
 
 /**
  * Generate cookies untuk Kasir Pintar menggunakan Playwright
+ * OPTIMIZED for Vercel 60s timeout limit
  */
 async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
   let browser = null;
   let context = null;
+  const startTime = Date.now();
+  const metrics = {};
 
   try {
-    logger.log('🚀 Initializing Playwright browser...');
+    logger.log('🚀 [OPTIMIZED] Initializing Playwright browser...');
     
     // Detect environment
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL;
-    logger.log(`🔧 Environment: ${isProduction ? 'PRODUCTION (Vercel/Serverless)' : 'DEVELOPMENT (Local)'}`);
+    logger.log(`🔧 Environment: ${isProduction ? 'PRODUCTION (Vercel)' : 'DEVELOPMENT'}`);
 
-    // Launch browser with stealth configuration
+    // OPTIMIZATION 1: Minimal browser args, faster launch
+    const launchStart = Date.now();
     browser = await chromium.launch({
       headless: true,
-      timeout: 50000, // 50 seconds for browser launch
+      timeout: 30000, // Reduced from 50s to 30s
       args: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-dev-shm-usage',
-        '--disable-setuid-sandbox',
         '--no-sandbox',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-gpu'
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process'
       ]
     });
+    metrics.browserLaunch = Date.now() - launchStart;
+    logger.log(`✅ Browser launched in ${metrics.browserLaunch}ms`);
 
-    logger.log('✅ Browser launched successfully');
-
-    // Create stealth context
+    // Create context with minimal config
     context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       viewport: { width: 1920, height: 1080 },
-      locale: 'id-ID',
-      timezoneId: 'Asia/Jakarta',
-      permissions: ['geolocation'],
-      geolocation: { latitude: -6.2088, longitude: 106.8456 }, // Jakarta
-      colorScheme: 'light',
-      deviceScaleFactor: 1,
-      hasTouch: false,
-      isMobile: false,
-      javaScriptEnabled: true
+      locale: 'id-ID'
     });
 
     const page = await context.newPage();
+    page.setDefaultTimeout(50000); // Global timeout 50s
     
-    // Set default timeout untuk semua page operations
-    page.setDefaultTimeout(55000); // 55 seconds
-    
-    logger.log('✅ Stealth page created');
-
-    // Add stealth scripts
+    // Minimal stealth script
     await page.addInitScript(() => {
-      // Override navigator properties
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-      Object.defineProperty(navigator, 'languages', { get: () => ['id-ID', 'id', 'en-US', 'en'] });
-      
-      // Override chrome detection
-      window.chrome = {
-        runtime: {},
-        loadTimes: function() {},
-        csi: function() {},
-        app: {}
-      };
-
-      // Remove automation traces
-      delete navigator.__proto__.webdriver;
+      window.chrome = { runtime: {} };
     });
 
-    // Navigate to login page
+    // OPTIMIZATION 2: Fast navigation
     const loginUrl = `https://${domain}/login`;
-    logger.log(`🌐 Navigating to Kasir Pintar login page: ${loginUrl}`);
+    logger.log(`🌐 Navigating to: ${loginUrl}`);
     
-    // Use domcontentloaded instead of networkidle (faster)
+    const navStart = Date.now();
     await page.goto(loginUrl, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 50000 // 50 seconds
+      waitUntil: 'domcontentloaded', // Fastest option
+      timeout: 30000 // Reduced from 50s
     });
+    metrics.navigation = Date.now() - navStart;
+    logger.log(`📄 Page loaded in ${metrics.navigation}ms`);
 
-    logger.log('📄 Login page loaded');
-
-    // Wait for Turnstile iframe to appear
-    logger.log('⏳ Waiting for Turnstile challenge...');
+    // OPTIMIZATION 3: Aggressive Turnstile handling
+    logger.log('⏳ Detecting Turnstile...');
+    const turnstileStart = Date.now();
     
     try {
-      // Wait for Turnstile iframe dengan timeout lebih panjang
-      await page.waitForSelector('iframe[src*="challenges.cloudflare.com"]', { 
-        timeout: 40000 // 40 seconds
-      });
-      logger.log('✅ Turnstile iframe detected');
+      // Quick check for iframe (max 8s)
+      const iframeDetected = await page.waitForSelector('iframe[src*="challenges.cloudflare.com"]', { 
+        timeout: 8000,
+        state: 'attached'
+      }).then(() => true).catch(() => false);
 
-      // Wait for Turnstile to be solved - THIS IS THE SLOWEST PART
-      // Bisa butuh 15-35 detik tergantung kompleksitas challenge
-      await page.waitForFunction(() => {
-        const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
-        if (!iframe) return false;
+      if (iframeDetected) {
+        logger.log('✅ Turnstile iframe found');
+        
+        // Get iframe and click checkbox immediately
+        const turnstileFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"]');
         
         try {
-          const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-          const checkbox = iframeDoc.querySelector('input[type="checkbox"]');
-          return checkbox && checkbox.checked;
+          await turnstileFrame.locator('input[type="checkbox"]').click({ 
+            timeout: 5000,
+            force: true 
+          });
+          logger.log('✅ Turnstile checkbox clicked');
         } catch (e) {
-          // Cross-origin iframe, can't access content
-          // Check if response token exists in parent page
-          const token = document.querySelector('input[name="cf-turnstile-response"]');
-          return token && token.value.length > 0;
+          logger.warn('⚠️ Could not click checkbox (might auto-solve)');
         }
-      }, { timeout: 40000 }); // 40 seconds untuk solve Turnstile
 
-      logger.log('✅ Turnstile solved successfully');
-      
-      // Additional wait for form to be ready
-      await page.waitForTimeout(2000);
+        // AGGRESSIVE: Wait for token with shorter timeout (max 30s for Turnstile)
+        const maxWait = 30; // 30 seconds max
+        let solved = false;
+
+        for (let i = 0; i < maxWait; i++) {
+          const token = await page.evaluate(() => {
+            const input = document.querySelector('input[name="cf-turnstile-response"]');
+            return input?.value || null;
+          });
+
+          if (token && token.length > 0) {
+            logger.log(`✅ Turnstile solved in ${i + 1}s`);
+            solved = true;
+            break;
+          }
+
+          // Check every 1 second
+          await page.waitForTimeout(1000);
+
+          // Log progress every 5 seconds
+          if ((i + 1) % 5 === 0) {
+            logger.log(`⏱️ Still solving... ${i + 1}s`);
+          }
+        }
+
+        if (!solved) {
+          throw new Error('Turnstile timeout after 30 seconds');
+        }
+
+        // Small buffer after solve
+        await page.waitForTimeout(1000);
+        
+      } else {
+        logger.log('ℹ️ No Turnstile detected (might be already solved)');
+      }
+
+      metrics.turnstile = Date.now() - turnstileStart;
+      logger.log(`✅ Turnstile handling completed in ${metrics.turnstile}ms`);
 
     } catch (error) {
-      logger.warn('⚠️ Turnstile detection timeout (might not be present or already solved)');
+      metrics.turnstile = Date.now() - turnstileStart;
+      logger.error(`❌ Turnstile error after ${metrics.turnstile}ms: ${error.message}`);
+      throw error;
     }
 
-    // Fill login form dengan timeout individual yang lebih pendek
+    // OPTIMIZATION 4: Fast form fill
     logger.log('📝 Filling login form...');
+    const formStart = Date.now();
     
+    // Use fill with minimal timeout
     await page.fill('input[name="email"], input[type="email"], #email', email, {
-      timeout: 5000 // 5 seconds per field
+      timeout: 5000
     });
     await page.fill('input[name="password"], input[type="password"], #password', password, {
       timeout: 5000
     });
     
-    logger.log('✅ Login form filled');
+    metrics.formFill = Date.now() - formStart;
+    logger.log(`✅ Form filled in ${metrics.formFill}ms`);
 
-    // Submit form
-    logger.log('📤 Submitting login form...');
+    // OPTIMIZATION 5: Fast submit
+    logger.log('📤 Submitting...');
+    const submitStart = Date.now();
     
     await Promise.all([
       page.click('button[type="submit"], input[type="submit"], .btn-login'),
       page.waitForNavigation({ 
         waitUntil: 'domcontentloaded',
-        timeout: 40000 // 40 seconds untuk login complete
+        timeout: 20000 // Reduced from 40s
       })
     ]);
 
-    // Check if login successful
+    metrics.submit = Date.now() - submitStart;
+    logger.log(`✅ Submit completed in ${metrics.submit}ms`);
+
+    // Check login success
     const currentUrl = page.url();
     
     if (currentUrl.includes('/login')) {
-      // Still on login page - check for error message
       const errorElement = await page.$('.alert-danger, .error-message, [class*="error"]');
       const errorText = errorElement ? await errorElement.textContent() : 'Unknown error';
-      
       throw new Error(`Login failed: ${errorText}`);
     }
 
-    logger.log('✅ Login successful!');
-    logger.log(`📍 Current URL: ${currentUrl}`);
+    logger.log(`✅ Login successful! URL: ${currentUrl}`);
 
-    // Extract cookies
+    // OPTIMIZATION 6: Fast cookie extraction
     logger.log('🍪 Extracting cookies...');
+    const cookieStart = Date.now();
     const cookies = await context.cookies();
-    
-    logger.log(`✅ Extracted ${cookies.length} cookies`);
+    metrics.cookieExtract = Date.now() - cookieStart;
 
-    // Format cookies for MongoDB
+    // Format cookies
     const formattedCookies = cookies.map(cookie => ({
       name: cookie.name,
       value: cookie.value,
@@ -187,16 +203,35 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
 
     // Close browser
     await browser.close();
-    logger.log('🔒 Browser closed');
+    
+    // Calculate total time
+    const totalTime = Date.now() - startTime;
+    metrics.total = totalTime;
+
+    logger.log(`✅ Completed in ${totalTime}ms (${(totalTime / 1000).toFixed(2)}s)`);
+    logger.log(`📊 Performance breakdown:
+  - Browser launch: ${metrics.browserLaunch}ms
+  - Navigation: ${metrics.navigation}ms
+  - Turnstile: ${metrics.turnstile}ms
+  - Form fill: ${metrics.formFill}ms
+  - Submit: ${metrics.submit}ms
+  - Cookie extract: ${metrics.cookieExtract}ms
+  - TOTAL: ${metrics.total}ms`);
 
     return {
       success: true,
       cookies: formattedCookies,
-      message: `Successfully generated ${formattedCookies.length} cookies`
+      message: `Successfully generated ${formattedCookies.length} cookies`,
+      performanceMetrics: {
+        totalMs: metrics.total,
+        totalSeconds: (metrics.total / 1000).toFixed(2),
+        breakdown: metrics
+      }
     };
 
   } catch (error) {
-    logger.error('❌ Error generating cookies:', error.message);
+    const totalTime = Date.now() - startTime;
+    logger.error(`❌ Error after ${totalTime}ms (${(totalTime / 1000).toFixed(2)}s): ${error.message}`);
     
     // Clean up
     if (browser) {
@@ -210,7 +245,13 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
     return {
       success: false,
       error: error.message,
-      cookies: []
+      cookies: [],
+      performanceMetrics: {
+        totalMs: totalTime,
+        totalSeconds: (totalTime / 1000).toFixed(2),
+        failedAt: Object.keys(metrics).pop() || 'initialization',
+        breakdown: metrics
+      }
     };
   }
 }
@@ -226,7 +267,7 @@ async function validateCookies(cookies, domain = 'kasirpintar.co.id') {
 
     browser = await chromium.launch({ 
       headless: true,
-      timeout: 30000
+      timeout: 20000
     });
     const context = await browser.newContext();
     
@@ -234,12 +275,12 @@ async function validateCookies(cookies, domain = 'kasirpintar.co.id') {
     await context.addCookies(cookies);
     
     const page = await context.newPage();
-    page.setDefaultTimeout(30000);
+    page.setDefaultTimeout(20000);
     
     // Navigate to dashboard
     await page.goto(`https://${domain}/dashboard`, { 
       waitUntil: 'domcontentloaded',
-      timeout: 25000 
+      timeout: 15000 
     });
 
     const currentUrl = page.url();
