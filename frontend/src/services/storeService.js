@@ -6,13 +6,13 @@ export const storeService = {
   // Get all stores
   getAll: async () => {
     const response = await api.get('/stores');
-    return response.data.stores;  // ✅ FIXED: backend returns 'stores' not 'data'
+    return response.data.stores;
   },
 
   // Get single store
   getById: async (id) => {
     const response = await api.get(`/stores/${id}`);
-    return response.data.store;  // ✅ FIXED: backend returns 'store' not 'data'
+    return response.data.store;
   },
 
   // Create store
@@ -39,14 +39,24 @@ export const storeService = {
     return response.data;
   },
 
-  // Generate cookies (with optional email/password)
-  // If email & password not provided, will use saved credentials
-  generateCookies: async (storeId, email = null, password = null) => {
-    const payload = {};
-    if (email) payload.email = email;
-    if (password) payload.password = password;
-    
-    const response = await api.post(`/stores/${storeId}/generate`, payload);  // ✅ FIXED: '/generate' not '/generate-cookies'
+  // ✅ FIXED: Generate cookies for a store
+  // Uses /cookies/generate endpoint with storeName or storeId
+  generateCookies: async (storeId, storeName, email, password) => {
+    const payload = {
+      email,
+      password
+    };
+
+    // Backend accepts either storeId OR storeName
+    if (storeId) {
+      payload.storeId = storeId;
+    } else if (storeName) {
+      payload.storeName = storeName;
+    }
+
+    console.log('🚀 Generating cookies with payload:', { ...payload, password: '***' });
+
+    const response = await api.post('/cookies/generate', payload);
     return response.data;
   },
 
