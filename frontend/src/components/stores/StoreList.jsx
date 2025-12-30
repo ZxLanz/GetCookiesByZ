@@ -31,7 +31,6 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
     if (!storeToDelete) return;
 
     try {
-      // ✅ FIXED: Use storeService instead of manual fetch
       await storeService.delete(storeToDelete._id);
       toast.success(`Toko "${storeToDelete.name}" berhasil dihapus!`);
       setShowDeleteModal(false);
@@ -56,25 +55,33 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
     try {
       setLoadingGenerate(prev => ({ ...prev, [storeId]: true }));
 
-      // ✅ FIXED: Use storeService instead of manual fetch
       const checkData = await storeService.hasCredentials(storeId);
       console.log('📋 Credentials check:', checkData);
 
       if (checkData.hasCredentials) {
-        // ✅ Auto-generate with existing credentials
+        // Auto-generate with existing credentials
         const loadingToast = toast.loading('Auto generating cookies...');
         
-        const data = await storeService.generateCookies(storeId);
+        const store = stores.find(s => s._id === storeId);
+        
+        // ✅ FIXED: Pass storeName as well
+        const data = await storeService.generateCookies(
+          store._id,
+          store.name,  // ✅ ADD storeName
+          null,        // email (will use saved)
+          null         // password (will use saved)
+        );
+        
         toast.dismiss(loadingToast);
 
         if (data.success) {
-          toast.success(`Berhasil generate ${data.cookiesCount} cookies!`);
+          toast.success(`Berhasil generate ${data.cookiesCount || data.cookies?.length || 0} cookies!`);
           await onRefresh?.();
         } else {
           toast.error(data.message || 'Gagal generate cookies');
         }
       } else {
-        // ✅ Show modal to input credentials (first time)
+        // Show modal to input credentials (first time)
         console.log('🔐 No credentials found, showing modal');
         const store = stores.find(s => s._id === storeId);
         setSelectedStore(store);
@@ -99,22 +106,23 @@ const StoreList = ({ stores = [], setStores, loading, onRefresh }) => {
     try {
       const loadingToast = toast.loading('Generating cookies...');
       
-      // ✅ FIXED: Use storeService instead of manual fetch
+      // ✅ FIXED: Pass all 4 parameters including storeName
       const data = await storeService.generateCookies(
-        selectedStore._id,
-        credentials.email,
-        credentials.password
+        selectedStore._id,       // storeId
+        selectedStore.name,      // ✅ ADD storeName
+        credentials.email,       // email
+        credentials.password     // password
       );
       
       toast.dismiss(loadingToast);
 
       if (data.success) {
-        toast.success(`Berhasil generate ${data.cookiesCount} cookies! Credentials telah disimpan.`);
+        const cookieCount = data.cookiesCount || data.cookies?.length || 0;
+        toast.success(`Berhasil generate ${cookieCount} cookies! Credentials telah disimpan.`);
         setShowCredentialModal(false);
         setCredentials({ email: '', password: '' });
         setSelectedStore(null);
         
-        // ✅ PENTING: Refresh stores untuk update status & cookie count
         await onRefresh?.();
       } else {
         toast.error(data.message || 'Gagal generate cookies');
