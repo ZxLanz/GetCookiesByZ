@@ -40,21 +40,27 @@ export const storeService = {
   },
 
   // ✅ FIXED: Generate cookies for a store
-  // Uses /cookies/generate endpoint with storeName or storeId
+  // Uses /cookies/generate endpoint with storeName (required by backend)
   generateCookies: async (storeId, storeName, email, password) => {
     const payload = {
       email,
       password
     };
 
-    // Backend accepts either storeId OR storeName
-    if (storeId) {
-      payload.storeId = storeId;
-    } else if (storeName) {
+    // ✅ CRITICAL: Backend requires storeName, not storeId
+    // Always send storeName if available, fallback to storeId
+    if (storeName) {
       payload.storeName = storeName;
+    } else if (storeId) {
+      payload.storeId = storeId;
     }
 
-    console.log('🚀 Generating cookies with payload:', { ...payload, password: '***' });
+    console.log('🚀 Generating cookies with payload:', { 
+      ...payload, 
+      password: password ? '***' : null,
+      storeId,
+      storeName
+    });
 
     const response = await api.post('/cookies/generate', payload);
     return response.data;
