@@ -7,9 +7,32 @@
     }
   ],
   "functions": {
-    "api/index.js": {
-      "maxDuration": 10,
-      "memory": 1024
+    "api/**/*.js": {
+      "maxDuration": 60,
+      "memory": 3008
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://get-cookies-by-z.vercel.app"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        },
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        }
+      ]
+    }
+  ]
 }
