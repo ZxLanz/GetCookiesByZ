@@ -26,6 +26,7 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
     // Launch browser with stealth configuration
     browser = await chromium.launch({
       headless: true,
+      timeout: 50000, // 50 seconds for browser launch
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-dev-shm-usage',
@@ -55,6 +56,10 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
     });
 
     const page = await context.newPage();
+    
+    // Set default timeout untuk semua page operations
+    page.setDefaultTimeout(55000); // 55 seconds
+    
     logger.log('✅ Stealth page created');
 
     // Add stealth scripts
@@ -80,9 +85,10 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
     const loginUrl = `https://${domain}/login`;
     logger.log(`🌐 Navigating to Kasir Pintar login page: ${loginUrl}`);
     
+    // Use domcontentloaded instead of networkidle (faster)
     await page.goto(loginUrl, { 
-      waitUntil: 'networkidle',
-      timeout: 30000 
+      waitUntil: 'domcontentloaded',
+      timeout: 50000 // 50 seconds
     });
 
     logger.log('📄 Login page loaded');
@@ -91,13 +97,14 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
     logger.log('⏳ Waiting for Turnstile challenge...');
     
     try {
-      // Wait for Turnstile iframe
+      // Wait for Turnstile iframe dengan timeout lebih panjang
       await page.waitForSelector('iframe[src*="challenges.cloudflare.com"]', { 
-        timeout: 10000 
+        timeout: 40000 // 40 seconds
       });
       logger.log('✅ Turnstile iframe detected');
 
-      // Wait for Turnstile to be solved (checkbox appears and is checked)
+      // Wait for Turnstile to be solved - THIS IS THE SLOWEST PART
+      // Bisa butuh 15-35 detik tergantung kompleksitas challenge
       await page.waitForFunction(() => {
         const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
         if (!iframe) return false;
@@ -112,7 +119,7 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
           const token = document.querySelector('input[name="cf-turnstile-response"]');
           return token && token.value.length > 0;
         }
-      }, { timeout: 30000 });
+      }, { timeout: 40000 }); // 40 seconds untuk solve Turnstile
 
       logger.log('✅ Turnstile solved successfully');
       
@@ -123,20 +130,27 @@ async function generateCookies(email, password, domain = 'kasirpintar.co.id') {
       logger.warn('⚠️ Turnstile detection timeout (might not be present or already solved)');
     }
 
-    // Fill login form
+    // Fill login form dengan timeout individual yang lebih pendek
     logger.log('📝 Filling login form...');
     
-    await page.fill('input[name="email"], input[type="email"], #email', email);
-    await page.fill('input[name="password"], input[type="password"], #password', password);
+    await page.fill('input[name="email"], input[type="email"], #email', email, {
+      timeout: 5000 // 5 seconds per field
+    });
+    await page.fill('input[name="password"], input[type="password"], #password', password, {
+      timeout: 5000
+    });
     
     logger.log('✅ Login form filled');
 
     // Submit form
-    logger.log('🔐 Submitting login form...');
+    logger.log('📤 Submitting login form...');
     
     await Promise.all([
       page.click('button[type="submit"], input[type="submit"], .btn-login'),
-      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 })
+      page.waitForNavigation({ 
+        waitUntil: 'domcontentloaded',
+        timeout: 40000 // 40 seconds untuk login complete
+      })
     ]);
 
     // Check if login successful
@@ -210,18 +224,22 @@ async function validateCookies(cookies, domain = 'kasirpintar.co.id') {
   try {
     logger.log('🔍 Validating cookies...');
 
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ 
+      headless: true,
+      timeout: 30000
+    });
     const context = await browser.newContext();
     
     // Add cookies to context
     await context.addCookies(cookies);
     
     const page = await context.newPage();
+    page.setDefaultTimeout(30000);
     
     // Navigate to dashboard
     await page.goto(`https://${domain}/dashboard`, { 
-      waitUntil: 'networkidle',
-      timeout: 15000 
+      waitUntil: 'domcontentloaded',
+      timeout: 25000 
     });
 
     const currentUrl = page.url();
